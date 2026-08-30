@@ -290,8 +290,13 @@ class WaliKelasController extends Controller
         // Fetch ALL attendance records within date range
         $attQuery = Attendance::whereIn('santri_id', $santriIds)
             ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()]);
-        if ($sesiQuery && strtolower($sesiQuery) !== 'semua sesi') {
-            $attQuery->whereRaw('LOWER(session) = ?', [strtolower($sesiQuery)]);
+        if ($sesiQuery && !in_array(strtolower($sesiQuery), ['semua sesi', 'semua', ''])) {
+            $sesLower = strtolower($sesiQuery);
+            if (in_array($sesLower, ['asar', 'ashar'])) {
+                $attQuery->whereIn(\DB::raw('LOWER(session)'), ['asar', 'ashar']);
+            } else {
+                $attQuery->whereRaw('LOWER(session) = ?', [$sesLower]);
+            }
         }
         $allAtts = $attQuery->get();
 
@@ -301,11 +306,17 @@ class WaliKelasController extends Controller
             $sId = $att->santri_id;
             $d   = $att->date ? $att->date->format('Y-m-d') : now()->toDateString();
             $ses = strtolower($att->session);
-            $attendanceMap[$sId][$d][$ses] = [
+            $rec = [
                 'status' => ucfirst(strtolower($att->status)),
                 'notes'  => $att->notes ?: 'Tercatat di sistem',
                 'time'   => $att->scan_time ? $att->scan_time->format('H:i') : ($att->created_at ? $att->created_at->format('H:i') : '-'),
             ];
+            $attendanceMap[$sId][$d][$ses] = $rec;
+            if ($ses === 'asar') {
+                $attendanceMap[$sId][$d]['ashar'] = $rec;
+            } elseif ($ses === 'ashar') {
+                $attendanceMap[$sId][$d]['asar'] = $rec;
+            }
         }
 
         // Check HariLibur & Jadwal nonaktif

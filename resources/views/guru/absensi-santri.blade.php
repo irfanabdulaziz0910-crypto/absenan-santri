@@ -205,7 +205,8 @@
                             $statusRaw = $attObj ? strtolower($attObj->status) : '';
                             $notesRaw  = $attObj ? strtolower($attObj->notes ?? '') : '';
 
-                            $isRfid  = $attObj && $statusRaw === 'hadir' && str_contains($notesRaw, 'rfid');
+                            // Absensi Hadir dari RFID/Tap Machine maupun record Hadir yang sudah tercatat
+                            $isRfid  = $attObj && $statusRaw === 'hadir';
                             $isLiburStatus = $isLibur;
 
                             $currentStatus = $attObj ? ucfirst($statusRaw) : 'Alfa';
@@ -221,7 +222,7 @@
                                 @if($isRfid)
                                     <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-bold border border-emerald-200">
                                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                        Hadir - RFID
+                                        ✓ Sudah Tap RFID
                                     </span>
                                 @elseif($isLiburStatus)
                                     <span class="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-300">
@@ -281,7 +282,7 @@
                             </td>
                             <td class="px-5 py-4">
                                 @if($isRfid)
-                                    <span class="text-xs text-slate-400">-</span>
+                                    <span class="text-xs text-slate-400 font-semibold">{{ $attObj->notes ?: 'Tercatat di sistem' }}</span>
                                 @elseif($isLiburStatus)
                                     <span class="text-xs text-slate-600 font-bold">{{ $liburRecord->keterangan ?? 'Jadwal Libur' }}</span>
                                 @else
@@ -330,8 +331,7 @@
             @php
                 $attObj = $attRecords->get($s->id);
                 $statusRaw = $attObj ? strtolower($attObj->status) : '';
-                $notesRaw  = $attObj ? strtolower($attObj->notes ?? '') : '';
-                $isRfid    = $attObj && $statusRaw === 'hadir' && str_contains($notesRaw, 'rfid');
+                $isRfid    = $attObj && $statusRaw === 'hadir';
             @endphp
             @if(!$isRfid && !$isLibur)
                 draftData[{{ $s->id }}] = {

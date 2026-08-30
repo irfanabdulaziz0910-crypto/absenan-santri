@@ -241,38 +241,46 @@
                             </td>
                             <td class="px-6 py-4 text-center whitespace-nowrap">
                                 @php
-                                $statusApp = $att->approval_status ?? 'approved';
+                                $statusApp = strtolower($att->approval_status ?? $att->status ?? 'approved');
                                 $badgeClass = match($statusApp) {
-                                    'approved' => 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                    'pending'  => 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse',
-                                    'rejected' => 'bg-rose-50 text-rose-700 border-rose-200',
-                                    'expired'  => 'bg-slate-100 text-slate-500 border-slate-200',
-                                    default    => 'bg-slate-50 text-slate-700 border-slate-200',
+                                    'approved', 'disetujui', 'hadir' => 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                    'pending', 'menunggu'           => 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse',
+                                    'rejected', 'ditolak'          => 'bg-rose-50 text-rose-700 border-rose-200',
+                                    'expired', 'kadaluarsa'        => 'bg-slate-100 text-slate-500 border-slate-200',
+                                    'izin'                         => 'bg-blue-50 text-blue-700 border-blue-200',
+                                    'sakit'                        => 'bg-purple-50 text-purple-700 border-purple-200',
+                                    'alfa'                         => 'bg-red-50 text-red-700 border-red-200',
+                                    default                        => 'bg-slate-50 text-slate-700 border-slate-200',
                                 };
                                 $statusLabel = match($statusApp) {
-                                    'approved' => 'DISETUJUI',
-                                    'pending'  => 'MENUNGGU PERSETUJUAN',
-                                    'rejected' => 'DITOLAK',
-                                    'expired'  => 'KADALUARSA',
-                                    default    => strtoupper($statusApp),
+                                    'approved', 'disetujui' => 'DISETUJUI',
+                                    'pending', 'menunggu'   => 'MENUNGGU PERSETUJUAN',
+                                    'rejected', 'ditolak'  => 'DITOLAK',
+                                    'expired', 'kadaluarsa' => 'KADALUARSA',
+                                    'hadir'                 => 'HADIR',
+                                    'izin'                  => 'IZIN',
+                                    'sakit'                 => 'SAKIT',
+                                    'alfa'                  => 'ALFA',
+                                    default                 => strtoupper($statusApp ?: 'DISETUJUI'),
                                 };
-                                                          <div class="flex flex-col items-center gap-1">
+                                @endphp
+                                <div class="flex flex-col items-center gap-1">
                                     <span class="px-3 py-1 rounded-full border text-[11px] font-extrabold tracking-wide {{ $badgeClass }}">
                                         {{ $statusLabel }}
                                     </span>
-                                    @if($statusApp === 'approved')
+                                    @if($statusApp === 'approved' || $statusApp === 'disetujui' || $statusApp === 'hadir')
                                         <a href="{{ route('guru.absensi-santri', ['classroom_id' => $att->classroom_id, 'date' => $att->date?->toDateString(), 'session' => $att->session]) }}"
                                            class="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-[#1a4731] hover:underline">
                                             Buka Absensi Santri &rarr;
                                         </a>
-                                    @elseif($statusApp === 'pending')
+                                    @elseif($statusApp === 'pending' || $statusApp === 'menunggu')
                                         <span class="mt-1 text-[10px] text-amber-700 font-medium italic">
                                             Menunggu persetujuan Admin atau Wali Kelas
                                         </span>
                                         <span class="text-[10px] font-bold text-slate-400 cursor-not-allowed bg-slate-100 px-2 py-0.5 rounded">
                                             🔒 Absensi Santri Dikunci
                                         </span>
-                                    @elseif($statusApp === 'rejected')
+                                    @elseif($statusApp === 'rejected' || $statusApp === 'ditolak')
                                         <span class="mt-1 text-[10px] text-rose-600 font-bold">
                                             Permintaan mengajar ditolak
                                         </span>
@@ -280,7 +288,7 @@
                                             <span class="text-[10px] text-rose-500 italic">"{{ $att->rejection_reason }}"</span>
                                         @endif
                                     @endif
-                                </div>         </div>
+                                </div>
                             </td>
                         </tr>
                     @empty

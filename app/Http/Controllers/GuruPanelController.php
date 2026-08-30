@@ -151,9 +151,12 @@ class GuruPanelController extends Controller
             ? Santri::where('classroom_id', $selectedClassroom->id)->orderBy('name')->get()
             : collect();
 
+        $sesLower = strtolower($sessionAktif);
+        $sessionQuery = in_array($sesLower, ['asar', 'ashar']) ? ['asar', 'ashar'] : [$sesLower];
+
         $attRecords = ($hasAbsenMengajar && $selectedClassroom)
             ? Attendance::whereDate('date', $date)
-                ->whereRaw('LOWER(session) = ?', [strtolower($sessionAktif)])
+                ->whereIn(\DB::raw('LOWER(session)'), $sessionQuery)
                 ->whereHas('santri', fn($q) => $q->where('classroom_id', $selectedClassroom->id))
                 ->get()
                 ->keyBy('santri_id')
@@ -253,12 +256,14 @@ class GuruPanelController extends Controller
                 continue;
             }
 
-            // Lock jika sudah ada absensi Hadir dari RFID Tap
+            // Lock jika sudah ada absensi Hadir (RFID Tap / Automatic)
+            $sesLowerItem = strtolower($sesi);
+            $sessionQueryItem = in_array($sesLowerItem, ['asar', 'ashar']) ? ['asar', 'ashar'] : [$sesLowerItem];
+
             $existingRfid = Attendance::where('santri_id', $santriId)
                 ->whereDate('date', $tanggal)
-                ->where('session', $sesi)
+                ->whereIn(\DB::raw('LOWER(session)'), $sessionQueryItem)
                 ->whereRaw('LOWER(status) = ?', ['hadir'])
-                ->whereRaw('LOWER(COALESCE(notes, \'\')) LIKE ?', ['%rfid%'])
                 ->exists();
 
             if ($existingRfid) {

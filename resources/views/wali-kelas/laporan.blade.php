@@ -76,7 +76,7 @@
         </div>
         <div>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">TOTAL HADIR</p>
-            <p class="text-2xl font-extrabold text-slate-800" id="stHadir">0</p>
+            <p class="text-2xl font-extrabold text-slate-800" id="stHadir">{{ $hadirCount ?? 0 }}</p>
         </div>
     </div>
 
@@ -86,7 +86,7 @@
         </div>
         <div>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">IZIN</p>
-            <p class="text-2xl font-extrabold text-slate-800" id="stIzin">0</p>
+            <p class="text-2xl font-extrabold text-slate-800" id="stIzin">{{ $izinCount ?? 0 }}</p>
         </div>
     </div>
 
@@ -96,7 +96,7 @@
         </div>
         <div>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">SAKIT</p>
-            <p class="text-2xl font-extrabold text-slate-800" id="stSakit">0</p>
+            <p class="text-2xl font-extrabold text-slate-800" id="stSakit">{{ $sakitCount ?? 0 }}</p>
         </div>
     </div>
 
@@ -109,7 +109,7 @@
         </div>
         <div>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">ALFA</p>
-            <p class="text-2xl font-extrabold text-slate-800" id="stAlfa">0</p>
+            <p class="text-2xl font-extrabold text-slate-800" id="stAlfa">{{ $alfaCount ?? 0 }}</p>
         </div>
     </div>
 
@@ -119,9 +119,9 @@
         </div>
         <div>
             <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">PERSENTASE</p>
-            <p class="text-2xl font-extrabold text-slate-800" id="stAvg">0%</p>
+            <p class="text-2xl font-extrabold text-slate-800" id="stAvg">{{ $persentaseHadir ?? 0 }}%</p>
             <div class="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-1.5">
-                <div id="stAvgBar" class="bg-[#1a4731] h-full rounded-full" style="width:0%"></div>
+                <div id="stAvgBar" class="bg-[#1a4731] h-full rounded-full" style="width:{{ $persentaseHadir ?? 0 }}%"></div>
             </div>
         </div>
     </div>
@@ -263,16 +263,14 @@
         const attendanceStats = @json($attendanceStats ?? []);
         const globalStats     = @json($globalStats ?? []);
 
-        if (currentPeriod !== 'harian') {
-            document.getElementById('stHadir').textContent = globalStats.hadir || 0;
-            document.getElementById('stIzin').textContent = globalStats.izin || 0;
-            document.getElementById('stSakit').textContent = globalStats.sakit || 0;
-            document.getElementById('stAlfa').textContent = globalStats.alfa || 0;
-            const avgPct = globalStats.persentase || 0;
-            document.getElementById('stAvg').textContent = `${avgPct}%`;
-            if (document.getElementById('stAvgBar')) {
-                document.getElementById('stAvgBar').style.width = `${avgPct}%`;
-            }
+        document.getElementById('stHadir').textContent = globalStats.hadir || 0;
+        document.getElementById('stIzin').textContent = globalStats.izin || 0;
+        document.getElementById('stSakit').textContent = globalStats.sakit || 0;
+        document.getElementById('stAlfa').textContent = globalStats.alfa || 0;
+        const avgPct = globalStats.persentase || 0;
+        document.getElementById('stAvg').textContent = `${avgPct}%`;
+        if (document.getElementById('stAvgBar')) {
+            document.getElementById('stAvgBar').style.width = `${avgPct}%`;
         }
 
         renderTable(filteredSantri, tgl, sesi);
