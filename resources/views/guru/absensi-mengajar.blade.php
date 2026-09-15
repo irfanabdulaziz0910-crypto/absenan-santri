@@ -153,6 +153,55 @@
                 @endif
             </div>
 
+            {{-- Section Badal (Otomatis Tampil Jika Mengajar Kelas Lain) --}}
+            <div id="section-badal" class="hidden rounded-2xl bg-amber-50 border-2 border-amber-300 p-4 space-y-4">
+                <div class="flex items-center gap-2">
+                    <span class="w-7 h-7 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-xs shrink-0">🔁</span>
+                    <div>
+                        <p class="font-extrabold text-amber-900 text-sm">Status: Guru Pendamping / Badal</p>
+                        <p class="text-xs text-amber-700">Anda tidak terdaftar sebagai Guru Utama di kelas ini. Pilih guru yang seharusnya mengajar dan isi alasan jika diketahui.</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="inp-replaced-guru" class="block text-xs font-bold uppercase tracking-wider text-amber-900 mb-1.5">
+                            Guru yang Seharusnya Mengajar (Guru Utama) <span class="text-red-500">*</span>
+                        </label>
+                        <select name="replaced_guru_id" id="inp-replaced-guru"
+                            class="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm bg-white font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+                            <option value="">-- Pilih Guru yang Digantikan --</option>
+                            @foreach($allGurus as $g)
+                                @if($g->id !== $guru->id)
+                                    <option value="{{ $g->id }}" @selected(old('replaced_guru_id') == $g->id)>{{ $g->name }}</option>
+                                @endif
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="inp-status-utama" class="block text-xs font-bold uppercase tracking-wider text-amber-900 mb-1.5">
+                            Status Ketidakhadiran Guru Utama <span class="text-xs text-amber-700 font-normal">(Opsional)</span>
+                        </label>
+                        <select name="status_guru_utama" id="inp-status-utama"
+                            class="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                            <option value="Sakit" @selected(old('status_guru_utama', 'Sakit') === 'Sakit')>Sakit</option>
+                            <option value="Izin"  @selected(old('status_guru_utama') === 'Izin')>Izin</option>
+                            <option value="Alfa"  @selected(old('status_guru_utama') === 'Alfa')>Alfa</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="inp-alasan" class="block text-xs font-bold uppercase tracking-wider text-amber-900 mb-1.5">
+                        Alasan Guru Utama Tidak Masuk <span class="text-xs text-amber-700 font-normal">(Opsional)</span>
+                    </label>
+                    <input type="text" name="alasan_tidak_masuk" id="inp-alasan" value="{{ old('alasan_tidak_masuk') }}"
+                        placeholder="Contoh: Sakit influenza / Ada keperluan dinas luar"
+                        class="w-full border border-amber-300 rounded-xl px-3 py-2.5 text-sm bg-white focus:ring-2 focus:ring-amber-500 outline-none">
+                </div>
+            </div>
+
             {{-- Row 3: Kitab & Status --}}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -308,4 +357,58 @@
     </section>
 
 </div>
+
+@push('scripts')
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const assignedClassIds    = @json($assignedClassIds ?? []);
+        const classroomsWithGurus = @json($classroomsWithGurus ?? []);
+        const currentGuruId       = @json($guru->id);
+
+        const selectClassroom   = document.getElementById('inp-classroom');
+        const sectionBadal      = document.getElementById('section-badal');
+        const selectReplaced    = document.getElementById('inp-replaced-guru');
+
+        function checkBadalCondition() {
+            if (!selectClassroom) return;
+            const classId = parseInt(selectClassroom.value, 10);
+            if (!classId) {
+                sectionBadal.classList.add('hidden');
+                if (selectReplaced) selectReplaced.removeAttribute('required');
+                return;
+            }
+
+            const isOwnClass = assignedClassIds.includes(classId);
+
+            if (isOwnClass) {
+                // KONDISI A: Kelas Tugas Sendiri -> Sembunyikan section badal
+                sectionBadal.classList.add('hidden');
+                if (selectReplaced) {
+                    selectReplaced.removeAttribute('required');
+                    selectReplaced.value = '';
+                }
+            } else {
+                // KONDISI B: Mengajar Kelas Lain -> Tampilkan section badal
+                sectionBadal.classList.remove('hidden');
+                if (selectReplaced) {
+                    selectReplaced.setAttribute('required', 'required');
+
+                    // Cari guru utama untuk kelas ini
+                    const mainGurus = classroomsWithGurus[classId] || [];
+                    const otherMainGurus = mainGurus.filter(g => g.id !== currentGuruId);
+
+                    if (otherMainGurus.length > 0 && !selectReplaced.value) {
+                        selectReplaced.value = otherMainGurus[0].id;
+                    }
+                }
+            }
+        }
+
+        if (selectClassroom) {
+            selectClassroom.addEventListener('change', checkBadalCondition);
+            checkBadalCondition();
+        }
+    });
+</script>
+@endpush
 @endsection

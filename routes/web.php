@@ -22,6 +22,10 @@ Route::get('/guru', function () {
     return redirect()->route('guru.dashboard');
 });
 
+// ─── PENDAFTARAN AKUN GURU MANDIRI (dari halaman Login) ─────────────────────
+Route::get('/guru/daftar',  [AdminAuthController::class, 'showRegisterForm'])->name('guru.register');
+Route::post('/guru/daftar', [AdminAuthController::class, 'register'])->name('guru.register.post');
+
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 Route::get('/admin/login',        [AdminAuthController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login',       [AdminAuthController::class, 'login'])->name('admin.login.post');
@@ -49,10 +53,12 @@ Route::middleware(['auth.admin'])->prefix('admin')->name('admin.')->group(functi
     Route::delete('/santri/{id}',  [SantriController::class, 'destroy'])->name('santri.destroy');
 
     // Guru
-    Route::get('/guru',            [GuruController::class, 'index'])->name('guru.index');
-    Route::post('/guru',           [GuruController::class, 'store'])->name('guru.store');
-    Route::put('/guru/{id}',       [GuruController::class, 'update'])->name('guru.update');
-    Route::delete('/guru/{id}',    [GuruController::class, 'destroy'])->name('guru.destroy');
+    Route::get('/guru',                        [GuruController::class, 'index'])->name('guru.index');
+    Route::post('/guru',                       [GuruController::class, 'store'])->name('guru.store');
+    Route::put('/guru/{id}',                   [GuruController::class, 'update'])->name('guru.update');
+    Route::delete('/guru/{id}',                [GuruController::class, 'destroy'])->name('guru.destroy');
+    Route::post('/guru/invitation',            [GuruController::class, 'storeInvitation'])->name('guru.invitation.store');
+    Route::delete('/guru/invitation/{id}',     [GuruController::class, 'destroyInvitation'])->name('guru.invitation.destroy');
 
     // Jadwal
     Route::get('/jadwal',                [JadwalController::class, 'index'])->name('jadwal.index');
@@ -72,6 +78,7 @@ Route::middleware(['auth.admin'])->prefix('admin')->name('admin.')->group(functi
     Route::delete('/setting-role/{account}', [SettingRoleController::class, 'destroy'])->name('setting-role.destroy');
     Route::get('/laporan',     [LaporanController::class, 'index'])->name('laporan');
     Route::get('/absensi-mengajar', [AdminTeacherAttendanceController::class, 'index'])->name('teacher-attendance.index');
+    Route::get('/rekap-absensi-guru', [AdminTeacherAttendanceController::class, 'rekap'])->name('teacher-attendance.rekap');
     Route::patch('/absensi-mengajar/{id}/approve', [AdminTeacherAttendanceController::class, 'approve'])->name('teacher-attendance.approve');
     Route::patch('/absensi-mengajar/{id}/reject', [AdminTeacherAttendanceController::class, 'reject'])->name('teacher-attendance.reject');
 
@@ -91,6 +98,7 @@ Route::prefix('wali-kelas')->name('wali-kelas.')->group(function () {
     Route::get('/absensi-manual',  [\App\Http\Controllers\WaliKelasController::class, 'absensiManual'])->name('absensi-manual');
     Route::post('/absensi-manual', [\App\Http\Controllers\WaliKelasController::class, 'saveAbsensiManual'])->name('absensi-manual.post');
     Route::get('/absensi-mengajar', [TeacherAttendanceController::class, 'index'])->name('teacher-attendance.index');
+    Route::get('/rekap-absensi-guru', [AdminTeacherAttendanceController::class, 'rekap'])->name('teacher-attendance.rekap');
     Route::post('/absensi-mengajar', [TeacherAttendanceController::class, 'store'])->name('teacher-attendance.store');
     Route::patch('/absensi-mengajar/{id}/approve', [\App\Http\Controllers\WaliKelasController::class, 'approveTeacherAttendance'])->name('teacher-attendance.approve');
     Route::patch('/absensi-mengajar/{id}/reject', [\App\Http\Controllers\WaliKelasController::class, 'rejectTeacherAttendance'])->name('teacher-attendance.reject');

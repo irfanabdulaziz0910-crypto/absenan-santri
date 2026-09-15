@@ -133,8 +133,9 @@
                 ['route' => 'admin.rfid',                  'label' => 'Absensi RFID',       'icon' => 'rfid'],
                 ['route' => 'admin.setting-role',          'label' => 'Manajemen Akun',     'icon' => 'role'],
                 ['route' => 'admin.teacher-schedule.index','label' => 'Jadwal Mengajar',    'icon' => 'jadwal'],
-                ['route' => 'admin.laporan',               'label' => 'Laporan',            'icon' => 'laporan'],
+                ['route' => 'admin.laporan',               'label' => 'Laporan Santri',     'icon' => 'laporan'],
                 ['route' => 'admin.teacher-attendance.index', 'label' => 'Absensi Guru', 'icon' => 'laporan'],
+                ['route' => 'admin.teacher-attendance.rekap', 'label' => 'Rekap Absensi Guru', 'icon' => 'laporan'],
             ];
         @endphp
 

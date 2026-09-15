@@ -3,11 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\Admin;
+use App\Models\Classroom;
+use App\Models\Guru;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 
 class AdminAuthController extends Controller
 {
@@ -127,6 +131,134 @@ class AdminAuthController extends Controller
         }
 
         return $storedPassword === $inputPassword;
+    }
+
+    /**
+     * Tampilkan halaman pendaftaran akun guru mandiri
+     */
+    public function showRegisterForm()
+    {
+        $classrooms = Classroom::orderBy('name')->get();
+        return view('auth.guru-register', compact('classrooms'));
+    }
+
+    /**
+     * Proses pendaftaran akun guru mandiri
+     * — Guru harus cocok dengan data Guru yang sudah diinput Admin
+     * — Tidak membuat record Guru baru
+     * — Memilih Peran (Wali Kelas / Guru Pendamping) & Kelas (Dinamis DB)
+     * — Validasi 1 Wali Kelas per Kelas dilakukan di backend & atomic dalam DB transaction
+     */
+    public function register(Request $request)
+    {
+        $request->validate([
+            'name'                  => ['required', 'string', 'max:255'],
+            'username'              => ['required', 'string', 'max:100', 'alpha_dash', Rule::unique('users', 'username')],
+            'password'              => ['required', 'string', 'min:6', 'confirmed'],
+            'role'                  => ['required', Rule::in(['wali_kelas', 'guru'])],
+            'classroom_id'          => ['nullable', 'required_if:role,wali_kelas', 'exists:classrooms,id'],
+            'classroom_ids'         => ['nullable', 'required_if:role,guru', 'array'],
+            'classroom_ids.*'       => ['exists:classrooms,id'],
+        ], [
+            'name.required'             => 'Nama lengkap wajib diisi.',
+            'username.required'         => 'Username wajib diisi.',
+            'username.alpha_dash'       => 'Username hanya boleh mengandung huruf, angka, tanda hubung, dan garis bawah.',
+            'username.unique'           => 'Username ini sudah digunakan. Silakan pilih username lain.',
+            'password.required'         => 'Password wajib diisi.',
+            'password.min'              => 'Password minimal 6 karakter.',
+            'password.confirmed'        => 'Konfirmasi password tidak cocok.',
+            'role.required'             => 'Peran / Penugasan wajib dipilih.',
+            'classroom_id.required_if'  => 'Wali Kelas wajib memilih Kelas Wali.',
+            'classroom_ids.required_if' => 'Guru Pendamping wajib memilih minimal satu kelas.',
+        ]);
+
+        $namaInput = trim($request->name);
+
+        // Cari data Guru yang namanya cocok (case-insensitive, trim whitespace)
+        $guru = Guru::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($namaInput)])->first();
+
+        if (!$guru) {
+            $guru = Guru::whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($namaInput) . '%'])->first();
+            if ($guru && strtolower(trim($guru->name)) !== strtolower($namaInput)) {
+                $guru = null;
+            }
+        }
+
+        if (!$guru) {
+            return back()->withInput()->withErrors([
+                'name' => 'Data guru dengan nama "' . $namaInput . '" tidak ditemukan. Silakan hubungi Admin untuk memastikan nama Anda sudah didaftarkan dengan benar.',
+            ]);
+        }
+
+        // Pengecekan apakah guru sudah memiliki akun login
+        $existingUser = User::where('guru_id', $guru->id)->first()
+            ?: ($guru->user_id ? User::find($guru->user_id) : null);
+
+        if ($existingUser) {
+            return back()->withInput()->withErrors([
+                'name' => 'Guru "' . $guru->name . '" sudah memiliki akun login. Silakan gunakan halaman Login.',
+            ]);
+        }
+
+        $role = $request->role; // 'wali_kelas' atau 'guru'
+
+        // Jika memilih Wali Kelas, validasi di backend bahwa kelas tersebut belum memiliki Wali Kelas lain
+        if ($role === 'wali_kelas') {
+            $classroomId  = (int) $request->classroom_id;
+            $existingWali = Guru::where('classroom_id', $classroomId)
+                ->where('id', '!=', $guru->id)
+                ->first();
+
+            if ($existingWali) {
+                $clsName = Classroom::where('id', $classroomId)->value('name');
+                return back()->withInput()->withErrors([
+                    'classroom_id' => "Kelas " . ($clsName ?: 'yang dipilih') . " sudah memiliki Wali Kelas yaitu {$existingWali->name}. Silakan pilih kelas lain atau pilih Guru Pendamping.",
+                ]);
+            }
+        }
+
+        $username = trim($request->username);
+        $email    = preg_replace('/[^a-zA-Z0-9._@-]/', '', $username) . '@santri.com';
+
+        // Eksekusi atomic pembuatan akun & simpan penugasan
+        DB::transaction(function () use ($guru, $username, $email, $request, $role) {
+            // Buat akun User baru — hubungkan ke Guru existing
+            $user = User::create([
+                'name'     => $guru->name,
+                'username' => $username,
+                'email'    => $email,
+                'password' => Hash::make($request->password),
+                'role'     => $role,
+                'guru_id'  => $guru->id,
+            ]);
+
+            if ($role === 'wali_kelas') {
+                $classroomId = (int) $request->classroom_id;
+                $kelasName   = Classroom::where('id', $classroomId)->value('name');
+
+                $guru->update([
+                    'user_id'      => $user->id,
+                    'classroom_id' => $classroomId,
+                    'kelas'        => $kelasName,
+                ]);
+
+                // Sync pivot classroom untuk Wali Kelas
+                $guru->classrooms()->sync([$classroomId]);
+            } else {
+                // Guru Pendamping: classroom_id = NULL (bebas kelas induk), sync pilihan kelas ke guru_classrooms pivot
+                $guru->update([
+                    'user_id'      => $user->id,
+                    'classroom_id' => null,
+                    'kelas'        => null,
+                ]);
+
+                $selectedClassroomIds = array_map('intval', (array) $request->input('classroom_ids', []));
+                $guru->classrooms()->sync($selectedClassroomIds);
+            }
+        });
+
+        return redirect()->route('admin.login')
+            ->with('success', 'Akun guru berhasil dibuat! Silakan login dengan username [' . $username . '] dan password Anda.');
     }
 
     public function logout(Request $request)

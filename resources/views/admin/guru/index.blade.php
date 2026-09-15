@@ -3,18 +3,32 @@
 @section('breadcrumb', 'Data Guru')
 
 @section('content')
+@if(session('success'))
+<div class="mb-4 p-4 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm">
+    <span>✅ {{ session('success') }}</span>
+    <button onclick="this.parentElement.remove()" class="text-emerald-500 hover:text-emerald-700 font-bold">✕</button>
+</div>
+@endif
+
+@if(session('error'))
+<div class="mb-4 p-4 bg-red-50 border border-red-200 text-red-800 rounded-xl text-xs font-semibold flex items-center justify-between shadow-sm">
+    <span>⚠️ {{ session('error') }}</span>
+    <button onclick="this.parentElement.remove()" class="text-red-500 hover:text-red-700 font-bold">✕</button>
+</div>
+@endif
+
 <div class="mb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
     <div>
         <h1 class="text-2xl font-bold text-slate-800">Data Guru & Penugasan Mengajar</h1>
         <p class="text-slate-500 text-sm mt-1">Kelola data tenaga pendidik dan penetapan daftar kelas yang dapat diajar.</p>
     </div>
-    <div class="flex gap-4 items-center">
+    <div class="flex gap-2 items-center">
         <div class="relative w-64 hidden md:block">
             <svg class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0"/></svg>
             <input type="text" id="guruSearchInput" oninput="renderGuruTable()" placeholder="Cari nama atau NIP..." class="w-full pl-9 pr-4 py-2 text-xs bg-white border border-slate-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-[#1a4731]/20">
         </div>
-        <button onclick="openModalTambah()" class="px-5 py-2.5 bg-[#1a4731] text-white rounded-xl font-semibold shadow-sm shadow-green-900/20 hover:bg-[#153c28] transition whitespace-nowrap">
-            + Tambah Guru
+        <button onclick="openModalTambah()" class="px-4 py-2.5 bg-[#1a4731] text-white rounded-xl font-semibold text-xs shadow-sm hover:bg-[#153c28] transition whitespace-nowrap cursor-pointer">
+            + Tambah Guru Manual
         </button>
     </div>
 </div>
@@ -90,6 +104,8 @@
         <!-- Pagination injected via JS -->
     </div>
 </div>
+
+
 
 <!-- Modal Form Tambah/Edit Guru -->
 <div id="modalFormGuru" class="fixed inset-0 z-[60] hidden">
@@ -225,6 +241,8 @@
         </form>
     </div>
 </div>
+
+
 @endsection
 
 @push('scripts')
@@ -292,10 +310,10 @@
 
             let akunHtml = '';
             if(g.user) {
-                const roleLabel = g.user.role === 'wali_kelas' ? 'Wali Kelas' : (g.user.role === 'supervisor' ? 'Supervisor' : 'Guru');
-                akunHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-full border border-emerald-200">🟢 Akun Aktif (${roleLabel})</span>`;
+                const roleLabel = g.user.role === 'wali_kelas' ? 'Wali Kelas' : (g.user.role === 'supervisor' ? 'Supervisor' : 'Pendamping');
+                akunHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-full border border-emerald-200">✅ Sudah Terdaftar (${roleLabel})</span>`;
             } else {
-                akunHtml = `<div class="flex items-center gap-1.5"><span class="px-2 py-0.5 text-[11px] font-medium text-slate-500 bg-slate-100 rounded-full">⚪ Belum ada akun</span><a href="{{ route("admin.setting-role") }}" class="text-[11px] font-bold text-[#1a4731] hover:underline">+ Akun</a></div>`;
+                akunHtml = `<span class="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-500 bg-slate-100 rounded-full">⚪ Belum Terdaftar</span>`;
             }
 
             const tr = document.createElement('tr');
@@ -417,6 +435,53 @@
 
     function closeModalHapus() {
         document.getElementById('modalHapusGuru').classList.add('hidden');
+    }
+
+    function openModalUndang() {
+        document.getElementById('modalUndangGuru').classList.remove('hidden');
+        toggleInviteTargetType();
+    }
+
+    function closeModalUndang() {
+        document.getElementById('modalUndangGuru').classList.add('hidden');
+    }
+
+    function toggleInviteTargetType() {
+        const type = document.querySelector('input[name="invite_target_type"]:checked')?.value || 'existing';
+        const blockExisting = document.getElementById('blockInviteExisting');
+        const blockNew = document.getElementById('blockInviteNew');
+
+        if (type === 'existing') {
+            blockExisting?.classList.remove('hidden');
+            blockNew?.classList.add('hidden');
+        } else {
+            blockExisting?.classList.add('hidden');
+            blockNew?.classList.remove('hidden');
+        }
+    }
+
+    function copyInviteUrl(url, btn) {
+        if (!navigator.clipboard) {
+            const el = document.createElement('textarea');
+            el.value = url;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+        } else {
+            navigator.clipboard.writeText(url);
+        }
+
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '✓ Tersalin!';
+        btn.classList.remove('bg-slate-800', 'hover:bg-slate-700');
+        btn.classList.add('bg-emerald-600', 'hover:bg-emerald-700');
+
+        setTimeout(() => {
+            btn.innerHTML = originalText;
+            btn.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
+            btn.classList.add('bg-slate-800', 'hover:bg-slate-700');
+        }, 2000);
     }
 
     // Init

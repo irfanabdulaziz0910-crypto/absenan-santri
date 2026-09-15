@@ -166,6 +166,18 @@
             </div>
         </div>
 
+        <!-- Daftar Akun Guru -->
+        <div class="mt-4 pt-4 border-t border-slate-100 text-center">
+            <p class="text-sm text-slate-500 mb-2">Belum punya akun?</p>
+            <a href="{{ route('guru.register') }}"
+                class="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-amber-50 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 text-amber-800 font-bold text-sm rounded-xl transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                </svg>
+                Buat Akun Guru
+            </a>
+        </div>
+
         <!-- Footer text -->
         <p class="text-center text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase mt-4">
             SISTEM INFORMASI TERPADU

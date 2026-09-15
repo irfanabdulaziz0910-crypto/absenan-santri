@@ -62,34 +62,54 @@ class TeacherAttendanceController extends Controller
         // Hapus batasan kelas, semua guru (termasuk Wali Kelas) bisa melihat SEMUA kelas
         $allowedClassrooms = Classroom::orderBy('name')->get();
         
-        // Data Guru untuk pilihan badal
+        // Data Guru & Penugasan Kelas untuk fitur Badal
         $allGurus = Guru::orderBy('name')->get();
+        $assignedClassIds = collect([$guru->classroom_id])
+            ->merge($guru->classrooms->pluck('id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $classroomsWithGurus = [];
+        foreach ($allowedClassrooms as $cls) {
+            $mainGurus = $allGurus->filter(function ($g) use ($cls) {
+                return (int) $g->classroom_id === (int) $cls->id || $g->classrooms->contains('id', $cls->id);
+            })->values();
+
+            $classroomsWithGurus[$cls->id] = $mainGurus->map(fn($g) => [
+                'id'   => $g->id,
+                'name' => $g->name,
+            ])->toArray();
+        }
 
         // Absensi Mengajar yang sudah dilakukan hari ini
-        $attendancesToday = TeacherAttendance::with('classroom')
+        $attendancesToday = TeacherAttendance::with(['classroom', 'replacedGuru'])
             ->where('guru_id', $guru->id)
             ->whereDate('date', $today)
             ->latest('attendance_time')
             ->get();
 
-        $viewName = request()->routeIs('guru.*')
-            ? 'guru.absensi-mengajar'
-            : 'guru.absensi-mengajar';   // View yang sama, dibedakan oleh flag $isWaliKelas
+        $viewName = request()->routeIs('wali-kelas.*')
+            ? 'wali-kelas.teacher-attendance'
+            : 'guru.absensi-mengajar';
 
         return view($viewName, [
-            'guru'               => $guru,
-            'classrooms'         => $allowedClassrooms,
-            'allGurus'           => $allGurus,
-            'isWaliKelas'        => $isWaliKelas,
-            'kelasWali'          => ($isWaliKelas && $guru->classroom_id) ? Classroom::find($guru->classroom_id) : null,
-            'attendances'        => TeacherAttendance::with(['classroom', 'replacedGuru'])
+            'guru'                => $guru,
+            'classrooms'          => $allowedClassrooms,
+            'allGurus'            => $allGurus,
+            'assignedClassIds'    => $assignedClassIds,
+            'classroomsWithGurus' => $classroomsWithGurus,
+            'isWaliKelas'         => $isWaliKelas,
+            'kelasWali'           => ($isWaliKelas && $guru->classroom_id) ? Classroom::find($guru->classroom_id) : null,
+            'attendances'         => TeacherAttendance::with(['classroom', 'replacedGuru'])
                 ->where('guru_id', $guru->id)
                 ->latest('date')->latest('attendance_time')->get(),
-            'attendancesToday'   => $attendancesToday,
-            'hariIni'            => $hariIni,
-            'sessionAktif'       => $sessionAktif,
-            'isHariLibur'        => $isHariLibur,
-            'hariLibur'          => $hariLibur,
+            'attendancesToday'    => $attendancesToday,
+            'hariIni'             => $hariIni,
+            'sessionAktif'        => $sessionAktif,
+            'isHariLibur'         => $isHariLibur,
+            'hariLibur'           => $hariLibur,
         ]);
     }
 
@@ -100,30 +120,49 @@ class TeacherAttendanceController extends Controller
 
         $isWaliKelas = $this->isWaliKelas();
 
+        $assignedClassIds = collect([$guru->classroom_id])
+            ->merge($guru->classrooms->pluck('id'))
+            ->filter()
+            ->unique()
+            ->values()
+            ->toArray();
+
+        $selectedClassroom = (int) $request->input('classroom_id');
+        $isOwnClass        = in_array($selectedClassroom, $assignedClassIds, true);
+
         $validated = $request->validate([
-            'date'            => ['required', 'date'],
-            'attendance_time' => ['required'],
-            'session'         => ['nullable', 'string', 'max:50'],
-            'classroom_id'    => ['required', 'exists:classrooms,id'],
-            'kitab'           => ['required', 'string', 'max:255'],
-            'materi'          => ['required', 'string'],
-            'status'          => ['required', Rule::in(['Hadir', 'Izin', 'Sakit', 'Alfa'])],
+            'date'               => ['required', 'date'],
+            'attendance_time'    => ['required'],
+            'session'            => ['nullable', 'string', 'max:50'],
+            'classroom_id'       => ['required', 'exists:classrooms,id'],
+            'kitab'              => ['required', 'string', 'max:255'],
+            'materi'             => ['required', 'string'],
+            'status'             => ['required', Rule::in(['Hadir', 'Izin', 'Sakit', 'Alfa'])],
+            'replaced_guru_id'   => [$isOwnClass ? 'nullable' : 'required', 'nullable', 'exists:gurus,id'],
+            'alasan_tidak_masuk' => ['nullable', 'string', 'max:255'],
+            'status_guru_utama'  => ['nullable', Rule::in(['Sakit', 'Izin', 'Alfa'])],
         ]);
 
         // Simpan "Kelas Aktif" ke Session agar Absensi Santri tidak perlu memilih kelas lagi
         session([
             'active_classroom_id' => $validated['classroom_id'],
-            'active_date' => $validated['date'],
-            'active_session' => $validated['session'] ?: 'Subuh',
+            'active_date'         => $validated['date'],
+            'active_session'      => $validated['session'] ?: 'Subuh',
         ]);
 
         $validated['attendance_time'] = substr((string) $validated['attendance_time'], 0, 5);
-
-        // Tentukan apakah persetujuan diperlukan (otomatis APPROVED hanya jika mengajar di kelas induk sendiri)
-        $isOwnClass = $guru->classroom_id && (int) $validated['classroom_id'] === (int) $guru->classroom_id;
         $approvalStatus = $isOwnClass ? 'approved' : 'pending';
 
-        // Cek duplikasi absensi mengajar untuk kelas + sesi + tanggal yang sama
+        $statusMengajar  = $isOwnClass ? 'normal' : 'badal';
+        $replacedGuruId  = $isOwnClass ? null : ($validated['replaced_guru_id'] ?? null);
+        $alasanTidakMasuk = $request->input('alasan_tidak_masuk');
+
+        $finalMateri = $validated['materi'];
+        if (!$isOwnClass && $alasanTidakMasuk) {
+            $finalMateri = "[Alasan Guru Utama: {$alasanTidakMasuk}] " . $validated['materi'];
+        }
+
+        // Cek duplikasi absensi mengajar untuk kelas + sesi + tanggal yang sama untuk guru ini
         $duplicateQuery = TeacherAttendance::where('guru_id', $guru->id)
             ->whereDate('date', $validated['date'])
             ->where('classroom_id', $validated['classroom_id']);
@@ -139,36 +178,98 @@ class TeacherAttendanceController extends Controller
 
         $existingRecord = $duplicateQuery->first();
         if ($existingRecord) {
-            // Jika update record yang sudah ada, set status persetujuan baru
             $existingRecord->update([
-                'attendance_time' => $validated['attendance_time'],
-                'kitab'           => $validated['kitab'],
-                'materi'          => $validated['materi'],
-                'status'          => $validated['status'],
-                'approval_status' => $approvalStatus,
-                'approved_by'     => $isOwnClass ? (Auth::guard('web')->id() ?: Auth::id()) : null,
-                'approved_at'     => $isOwnClass ? now() : null,
+                'attendance_time'  => $validated['attendance_time'],
+                'kitab'            => $validated['kitab'],
+                'materi'           => $finalMateri,
+                'status'           => $validated['status'],
+                'status_mengajar'  => $statusMengajar,
+                'replaced_guru_id' => $replacedGuruId,
+                'approval_status'  => $approvalStatus,
+                'approved_by'      => $isOwnClass ? (Auth::guard('web')->id() ?: Auth::id()) : null,
+                'approved_at'      => $isOwnClass ? now() : null,
             ]);
 
             $msg = $approvalStatus === 'approved' 
                 ? 'Absensi Mengajar diperbarui. Absensi Santri otomatis terbuka!' 
                 : 'Permintaan mengajar diperbarui dan telah dikirim. Menunggu persetujuan Admin atau Wali Kelas.';
 
+            $this->recordReplacedGuruAbsence($validated, $replacedGuruId, $request->status_guru_utama, $alasanTidakMasuk, $guru);
+
             return $this->redirectAfterStore($isWaliKelas, $validated, $msg);
         }
 
-        TeacherAttendance::create($validated + [
-            'guru_id'         => $guru->id,
-            'approval_status' => $approvalStatus,
-            'approved_by'     => $isOwnClass ? (Auth::guard('web')->id() ?: Auth::id()) : null,
-            'approved_at'     => $isOwnClass ? now() : null,
+        TeacherAttendance::create([
+            'guru_id'          => $guru->id,
+            'classroom_id'     => $validated['classroom_id'],
+            'date'             => $validated['date'],
+            'attendance_time'  => $validated['attendance_time'],
+            'session'          => $validated['session'],
+            'kitab'            => $validated['kitab'],
+            'materi'           => $finalMateri,
+            'status'           => $validated['status'],
+            'status_mengajar'  => $statusMengajar,
+            'replaced_guru_id' => $replacedGuruId,
+            'approval_status'  => $approvalStatus,
+            'approved_by'      => $isOwnClass ? (Auth::guard('web')->id() ?: Auth::id()) : null,
+            'approved_at'      => $isOwnClass ? now() : null,
         ]);
+
+        $this->recordReplacedGuruAbsence($validated, $replacedGuruId, $request->status_guru_utama, $alasanTidakMasuk, $guru);
 
         $msg = $approvalStatus === 'approved' 
             ? 'Absensi Mengajar berhasil disimpan. Absensi Santri otomatis terbuka!' 
-            : 'Permintaan mengajar telah dikirim. Menunggu persetujuan Admin atau Wali Kelas.';
+            : 'Permintaan mengajar (Badal) telah dikirim. Menunggu persetujuan Admin atau Wali Kelas.';
 
         return $this->redirectAfterStore($isWaliKelas, $validated, $msg);
+    }
+
+    /**
+     * Catat absensi ketidakhadiran guru utama (jika diisi / dipilih saat badal)
+     */
+    private function recordReplacedGuruAbsence(array $validated, ?int $replacedGuruId, ?string $statusUtama, ?string $alasan, Guru $guruAktual)
+    {
+        if (!$replacedGuruId || (int) $replacedGuruId === (int) $guruAktual->id) {
+            return;
+        }
+
+        $statusUtama = $statusUtama ?: 'Sakit';
+        $sessionStr  = $validated['session'] ?: 'Subuh';
+
+        $existingUtama = TeacherAttendance::where('guru_id', $replacedGuruId)
+            ->whereDate('date', $validated['date'])
+            ->where('classroom_id', $validated['classroom_id'])
+            ->where('session', $sessionStr)
+            ->first();
+
+        $materiNotes = "Digantikan oleh Guru " . $guruAktual->name . ($alasan ? " (Alasan: {$alasan})" : "");
+
+        if ($existingUtama) {
+            // Hanya update jika statusnya bukan Hadir
+            if ($existingUtama->status !== 'Hadir') {
+                $existingUtama->update([
+                    'status'          => $statusUtama,
+                    'materi'          => $existingUtama->materi ?: $materiNotes,
+                    'status_mengajar' => 'normal',
+                ]);
+            }
+        } else {
+            TeacherAttendance::create([
+                'guru_id'          => $replacedGuruId,
+                'classroom_id'     => $validated['classroom_id'],
+                'date'             => $validated['date'],
+                'attendance_time'  => $validated['attendance_time'],
+                'session'          => $sessionStr,
+                'kitab'            => $validated['kitab'],
+                'materi'           => $materiNotes,
+                'status'           => $statusUtama,
+                'status_mengajar'  => 'normal',
+                'replaced_guru_id' => null,
+                'approval_status'  => 'approved',
+                'approved_by'      => null,
+                'approved_at'      => now(),
+            ]);
+        }
     }
 
     /**

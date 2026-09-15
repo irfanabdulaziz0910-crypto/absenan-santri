@@ -42,12 +42,20 @@ class GuruController extends Controller
         $kelasAktif   = Guru::whereNotNull('classroom_id')->where('status', 'aktif')->count();
         $kelasList    = Classroom::orderBy('name')->get();
 
+        $invitations   = \App\Models\TeacherInvitation::with(['guru', 'usedByUser'])->latest()->get();
+        $unlinkedGurus = Guru::where(function ($q) {
+            $q->whereNull('user_id')
+              ->orWhereDoesntHave('user');
+        })->orderBy('name')->get();
+
         return view('admin.guru.index', compact(
             'gurus',
             'totalAktif',
             'totalCuti',
             'kelasAktif',
             'kelasList',
+            'invitations',
+            'unlinkedGurus',
             'search',
             'statusFilter'
         ));
@@ -93,6 +101,17 @@ class GuruController extends Controller
             return back()->withInput()->withErrors([
                 'classroom_id' => 'Wali Kelas harus memiliki Kelas Wali yang dipilih.',
             ]);
+        }
+
+        // Validasi 1 Wali Kelas per Kelas
+        if ($role === 'wali_kelas' && $classroomId) {
+            $existingWali = Guru::where('classroom_id', $classroomId)->first();
+            if ($existingWali) {
+                $clsName = Classroom::where('id', $classroomId)->value('name');
+                return back()->withInput()->withErrors([
+                    'classroom_id' => "Kelas '{$clsName}' sudah memiliki Wali Kelas ({$existingWali->name}). Kelas hanya boleh memiliki 1 Wali Kelas.",
+                ]);
+            }
         }
 
         $kelasName = null;
@@ -194,6 +213,17 @@ class GuruController extends Controller
             return back()->withInput()->withErrors([
                 'classroom_id' => 'Wali Kelas harus memiliki Kelas Wali yang dipilih.',
             ]);
+        }
+
+        // Validasi 1 Wali Kelas per Kelas
+        if ($role === 'wali_kelas' && $classroomId) {
+            $existingWali = Guru::where('classroom_id', $classroomId)->where('id', '!=', $guru->id)->first();
+            if ($existingWali) {
+                $clsName = Classroom::where('id', $classroomId)->value('name');
+                return back()->withInput()->withErrors([
+                    'classroom_id' => "Kelas '{$clsName}' sudah memiliki Wali Kelas ({$existingWali->name}). Kelas hanya boleh memiliki 1 Wali Kelas.",
+                ]);
+            }
         }
 
         $kelasName = null;
@@ -302,5 +332,63 @@ class GuruController extends Controller
         }
 
         return preg_replace('/[^a-zA-Z0-9._@-]/', '', $base) . '@santri.com';
+    }
+
+    /**
+     * Buat Link Undangan Guru oleh Admin
+     */
+    public function storeInvitation(Request $request)
+    {
+        $request->validate([
+            'guru_id'      => ['nullable', 'exists:gurus,id'],
+            'name'         => ['nullable', 'string', 'max:255'],
+            'expires_days' => ['required', 'integer', 'min:1', 'max:90'],
+            'role'         => ['nullable', 'in:guru,wali_kelas'],
+        ]);
+
+        $guru = null;
+        if ($request->filled('guru_id')) {
+            $guru = Guru::find($request->guru_id);
+
+            if ($guru) {
+                $existingAccount = User::where('guru_id', $guru->id)->first();
+                if ($existingAccount) {
+                    return back()->with('error', "Guru '{$guru->name}' sudah memiliki akun login (username: {$existingAccount->username}).");
+                }
+            }
+        }
+
+        // Tentukan role: prioritaskan input form, fallback auto-detect dari classroom guru
+        $roleFromInput = $request->input('role');
+        if ($roleFromInput && in_array($roleFromInput, ['guru', 'wali_kelas'])) {
+            $finalRole = $roleFromInput;
+        } else {
+            $finalRole = ($guru && $guru->classroom_id) ? 'wali_kelas' : 'guru';
+        }
+
+        $token     = \Illuminate\Support\Str::random(40);
+        $expiresAt = now()->addDays((int) $request->expires_days);
+
+        $invitation = \App\Models\TeacherInvitation::create([
+            'token'      => $token,
+            'guru_id'    => $guru?->id,
+            'name'       => $guru ? $guru->name : ($request->name ? trim($request->name) : null),
+            'role'       => $finalRole,
+            'expires_at' => $expiresAt,
+            'created_by' => auth()->guard('admin')->id(),
+        ]);
+
+        return back()->with('success', "Link undangan berhasil dibuat untuk " . ($invitation->name ?: 'Guru') . "! Link: " . $invitation->invite_url);
+    }
+
+    /**
+     * Hapus Link Undangan Guru
+     */
+    public function destroyInvitation($id)
+    {
+        $invitation = \App\Models\TeacherInvitation::findOrFail($id);
+        $invitation->delete();
+
+        return back()->with('success', 'Link undangan berhasil dihapus.');
     }
 }

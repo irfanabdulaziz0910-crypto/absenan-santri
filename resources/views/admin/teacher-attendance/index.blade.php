@@ -147,7 +147,8 @@
             <table class="w-full text-sm text-left">
                 <thead class="bg-slate-50 text-xs uppercase font-bold text-slate-500 border-b border-slate-100">
                     <tr>
-                        <th class="px-5 py-3">Nama Guru</th>
+                        <th class="px-5 py-3">Nama Guru (Aktual)</th>
+                        <th class="px-5 py-3">Jenis Mengajar</th>
                         <th class="px-5 py-3">Tanggal</th>
                         <th class="px-5 py-3">Waktu / Sesi</th>
                         <th class="px-5 py-3">Kelas Diajar</th>
@@ -167,6 +168,20 @@
                                     </div>
                                     <span>{{ $attendance->guru->name ?? '-' }}</span>
                                 </div>
+                            </td>
+                            <td class="px-5 py-3.5 whitespace-nowrap">
+                                @if($attendance->status_mengajar === 'badal')
+                                    <span class="px-2.5 py-1 rounded-full bg-amber-50 border border-amber-300 text-amber-900 text-xs font-bold inline-flex items-center gap-1">
+                                        <span>🔁 Badal</span>
+                                        @if($attendance->replacedGuru)
+                                            <span class="text-[10px] font-medium text-amber-700">(vs {{ $attendance->replacedGuru->name }})</span>
+                                        @endif
+                                    </span>
+                                @else
+                                    <span class="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+                                        Guru Utama
+                                    </span>
+                                @endif
                             </td>
                             <td class="px-5 py-3.5 text-slate-700 whitespace-nowrap">
                                 {{ $attendance->date ? $attendance->date->format('d-m-Y') : '-' }}
