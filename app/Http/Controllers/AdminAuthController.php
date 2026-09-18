@@ -136,83 +136,126 @@ class AdminAuthController extends Controller
     /**
      * Tampilkan halaman pendaftaran akun guru mandiri
      */
-    public function showRegisterForm()
+    /**
+     * Tampilkan halaman pendaftaran akun guru mandiri
+     */
+    public function showRegisterForm(Request $request)
     {
         $classrooms = Classroom::orderBy('name')->get();
         return view('auth.guru-register', compact('classrooms'));
     }
 
     /**
-     * Proses pendaftaran akun guru mandiri
-     * — Guru harus cocok dengan data Guru yang sudah diinput Admin
-     * — Tidak membuat record Guru baru
-     * — Memilih Peran (Wali Kelas / Guru Pendamping) & Kelas (Dinamis DB)
-     * — Validasi 1 Wali Kelas per Kelas dilakukan di backend & atomic dalam DB transaction
+     * API AJAX Endpoint untuk verifikasi Nama Guru
+     */
+    public function checkTeacherName(Request $request)
+    {
+        $nameInput = trim((string) $request->input('name', ''));
+
+        if ($nameInput === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Nama lengkap wajib diisi.',
+            ], 422);
+        }
+
+        // Cari data Guru yang namanya cocok (case-insensitive, trim whitespace)
+        $guru = Guru::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($nameInput)])->first();
+
+        if (!$guru) {
+            $guru = Guru::whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($nameInput) . '%'])->first();
+            if ($guru && strtolower(trim($guru->name)) !== strtolower($nameInput)) {
+                $guru = null;
+            }
+        }
+
+        if (!$guru) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Data Guru dengan nama tersebut belum terdaftar. Silakan hubungi Admin.',
+            ], 404);
+        }
+
+        if ($guru->hasAccount()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Guru "' . $guru->name . '" sudah memiliki akun login. Silakan gunakan halaman Login.',
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'guru'    => [
+                'id'     => $guru->id,
+                'name'   => $guru->name,
+                'nip'    => $guru->nip,
+                'status' => $guru->status_label,
+            ],
+            'message' => 'Data Guru ditemukan: ' . $guru->name,
+        ]);
+    }
+
+    /**
+     * Proses pendaftaran akun guru mandiri berdasarkan NAMA GURU & PENUGASAN
      */
     public function register(Request $request)
     {
         $request->validate([
-            'name'                  => ['required', 'string', 'max:255'],
-            'username'              => ['required', 'string', 'max:100', 'alpha_dash', Rule::unique('users', 'username')],
-            'password'              => ['required', 'string', 'min:6', 'confirmed'],
-            'role'                  => ['required', Rule::in(['wali_kelas', 'guru'])],
-            'classroom_id'          => ['nullable', 'required_if:role,wali_kelas', 'exists:classrooms,id'],
-            'classroom_ids'         => ['nullable', 'required_if:role,guru', 'array'],
-            'classroom_ids.*'       => ['exists:classrooms,id'],
+            'name'            => ['required', 'string', 'max:255'],
+            'role'            => ['required', Rule::in(['wali_kelas', 'guru'])],
+            'classroom_id'    => ['nullable', 'required_if:role,wali_kelas', 'exists:classrooms,id'],
+            'classroom_ids'   => ['nullable', 'required_if:role,guru', 'array'],
+            'classroom_ids.*' => ['exists:classrooms,id'],
+            'username'        => ['required', 'string', 'max:100', 'alpha_dash', Rule::unique('users', 'username')],
+            'password'        => ['required', 'string', 'min:6', 'confirmed'],
         ], [
             'name.required'             => 'Nama lengkap wajib diisi.',
+            'role.required'             => 'Penugasan wajib dipilih.',
+            'classroom_id.required_if'  => 'Wali Kelas wajib memilih Kelas Yang Diwali.',
+            'classroom_ids.required_if' => 'Guru Pendamping wajib memilih minimal satu kelas.',
             'username.required'         => 'Username wajib diisi.',
             'username.alpha_dash'       => 'Username hanya boleh mengandung huruf, angka, tanda hubung, dan garis bawah.',
-            'username.unique'           => 'Username ini sudah digunakan. Silakan pilih username lain.',
+            'username.unique'           => 'Tidak dapat menggunakan username tersebut karena sudah digunakan.',
             'password.required'         => 'Password wajib diisi.',
             'password.min'              => 'Password minimal 6 karakter.',
-            'password.confirmed'        => 'Konfirmasi password tidak cocok.',
-            'role.required'             => 'Peran / Penugasan wajib dipilih.',
-            'classroom_id.required_if'  => 'Wali Kelas wajib memilih Kelas Wali.',
-            'classroom_ids.required_if' => 'Guru Pendamping wajib memilih minimal satu kelas.',
+            'password.confirmed'        => 'Tidak dapat membuat akun karena password tidak sama.',
         ]);
 
-        $namaInput = trim($request->name);
+        $nameInput = trim((string) $request->input('name'));
 
-        // Cari data Guru yang namanya cocok (case-insensitive, trim whitespace)
-        $guru = Guru::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($namaInput)])->first();
-
+        // Cari Data Guru di Master Data Guru
+        $guru = Guru::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($nameInput)])->first();
         if (!$guru) {
-            $guru = Guru::whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($namaInput) . '%'])->first();
-            if ($guru && strtolower(trim($guru->name)) !== strtolower($namaInput)) {
+            $guru = Guru::whereRaw('LOWER(name) LIKE ?', ['%' . strtolower($nameInput) . '%'])->first();
+            if ($guru && strtolower(trim($guru->name)) !== strtolower($nameInput)) {
                 $guru = null;
             }
         }
 
         if (!$guru) {
             return back()->withInput()->withErrors([
-                'name' => 'Data guru dengan nama "' . $namaInput . '" tidak ditemukan. Silakan hubungi Admin untuk memastikan nama Anda sudah didaftarkan dengan benar.',
+                'name' => 'Data Guru dengan nama tersebut belum terdaftar. Silakan hubungi Admin.',
             ]);
         }
 
-        // Pengecekan apakah guru sudah memiliki akun login
-        $existingUser = User::where('guru_id', $guru->id)->first()
-            ?: ($guru->user_id ? User::find($guru->user_id) : null);
-
-        if ($existingUser) {
+        if ($guru->hasAccount()) {
             return back()->withInput()->withErrors([
                 'name' => 'Guru "' . $guru->name . '" sudah memiliki akun login. Silakan gunakan halaman Login.',
             ]);
         }
 
-        $role = $request->role; // 'wali_kelas' atau 'guru'
+        $role = $request->input('role'); // 'wali_kelas' atau 'guru'
 
-        // Jika memilih Wali Kelas, validasi di backend bahwa kelas tersebut belum memiliki Wali Kelas lain
+        // Validasi Backend: 1 Kelas = Maksimal 1 Wali Kelas Aktif
         if ($role === 'wali_kelas') {
-            $classroomId  = (int) $request->classroom_id;
+            $classroomId  = (int) $request->input('classroom_id');
             $existingWali = Guru::where('classroom_id', $classroomId)
                 ->where('id', '!=', $guru->id)
                 ->first();
 
             if ($existingWali) {
-                $clsName = Classroom::where('id', $classroomId)->value('name');
                 return back()->withInput()->withErrors([
-                    'classroom_id' => "Kelas " . ($clsName ?: 'yang dipilih') . " sudah memiliki Wali Kelas yaitu {$existingWali->name}. Silakan pilih kelas lain atau pilih Guru Pendamping.",
+                    'classroom_id' => 'Kelas ini sudah memiliki Wali Kelas.',
                 ]);
             }
         }
@@ -220,9 +263,8 @@ class AdminAuthController extends Controller
         $username = trim($request->username);
         $email    = preg_replace('/[^a-zA-Z0-9._@-]/', '', $username) . '@santri.com';
 
-        // Eksekusi atomic pembuatan akun & simpan penugasan
+        // Eksekusi atomic pembuatan akun & hubungkan dengan Guru existing + simpan penugasan
         DB::transaction(function () use ($guru, $username, $email, $request, $role) {
-            // Buat akun User baru — hubungkan ke Guru existing
             $user = User::create([
                 'name'     => $guru->name,
                 'username' => $username,
@@ -242,10 +284,8 @@ class AdminAuthController extends Controller
                     'kelas'        => $kelasName,
                 ]);
 
-                // Sync pivot classroom untuk Wali Kelas
                 $guru->classrooms()->sync([$classroomId]);
             } else {
-                // Guru Pendamping: classroom_id = NULL (bebas kelas induk), sync pilihan kelas ke guru_classrooms pivot
                 $guru->update([
                     'user_id'      => $user->id,
                     'classroom_id' => null,
@@ -258,7 +298,7 @@ class AdminAuthController extends Controller
         });
 
         return redirect()->route('admin.login')
-            ->with('success', 'Akun guru berhasil dibuat! Silakan login dengan username [' . $username . '] dan password Anda.');
+            ->with('success', 'Akun guru berhasil dibuat untuk ' . $guru->name . '! Silakan login dengan username [' . $username . '] dan password Anda.');
     }
 
     public function logout(Request $request)

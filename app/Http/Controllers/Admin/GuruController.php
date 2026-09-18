@@ -109,7 +109,7 @@ class GuruController extends Controller
             if ($existingWali) {
                 $clsName = Classroom::where('id', $classroomId)->value('name');
                 return back()->withInput()->withErrors([
-                    'classroom_id' => "Kelas '{$clsName}' sudah memiliki Wali Kelas ({$existingWali->name}). Kelas hanya boleh memiliki 1 Wali Kelas.",
+                    'classroom_id' => "Kelas {$clsName} sudah memiliki Wali Kelas yaitu {$existingWali->name}. Satu kelas hanya dapat memiliki satu Wali Kelas aktif.",
                 ]);
             }
         }
@@ -152,7 +152,7 @@ class GuruController extends Controller
                 'username' => $username,
                 'email'    => $email,
                 'password' => Hash::make($request->password),
-                'role'     => $role,   // ← Gunakan role dari input Admin
+                'role'     => $role,
                 'guru_id'  => $guru->id,
             ]);
 
@@ -221,7 +221,7 @@ class GuruController extends Controller
             if ($existingWali) {
                 $clsName = Classroom::where('id', $classroomId)->value('name');
                 return back()->withInput()->withErrors([
-                    'classroom_id' => "Kelas '{$clsName}' sudah memiliki Wali Kelas ({$existingWali->name}). Kelas hanya boleh memiliki 1 Wali Kelas.",
+                    'classroom_id' => "Kelas {$clsName} sudah memiliki Wali Kelas yaitu {$existingWali->name}. Satu kelas hanya dapat memiliki satu Wali Kelas aktif.",
                 ]);
             }
         }
@@ -261,19 +261,17 @@ class GuruController extends Controller
             $email    = $this->buildEmailFromUsername($username);
 
             if ($user) {
-                // Update akun existing — UPDATE ROLE sesuai pilihan admin
                 $updateData = [
                     'name'     => $guru->name,
                     'username' => $username,
                     'email'    => $email,
-                    'role'     => $role,   // ← Update role sesuai input admin
+                    'role'     => $role,
                 ];
                 if ($request->filled('password')) {
                     $updateData['password'] = Hash::make($request->password);
                 }
                 $user->update($updateData);
             } elseif ($request->filled('password')) {
-                // Buat akun baru jika belum ada
                 $user = User::create([
                     'name'     => $guru->name,
                     'username' => $username,
@@ -285,7 +283,6 @@ class GuruController extends Controller
                 $guru->update(['user_id' => $user->id]);
             }
         } elseif ($user) {
-            // Update nama dan role saja meski username tidak diisi
             $updateData = ['name' => $guru->name];
             if ($request->filled('role')) {
                 $updateData['role'] = $role;
@@ -295,6 +292,213 @@ class GuruController extends Controller
 
         return redirect()->route('admin.guru.index')
             ->with('success', "Data guru '{$guru->name}' berhasil diperbarui.");
+    }
+
+    /**
+     * Buat Kode Pendaftaran Unik untuk Guru
+     */
+    public function generateRegistrationCode(Request $request, $id)
+    {
+        $guru = Guru::findOrFail($id);
+
+        if ($guru->hasAccount()) {
+            return back()->with('error', "Guru '{$guru->name}' sudah memiliki akun login terdaftar.");
+        }
+
+        $code = strtoupper(\Illuminate\Support\Str::random(3)) . '-' . rand(1000, 9999);
+        while (Guru::where('registration_code', $code)->exists()) {
+            $code = strtoupper(\Illuminate\Support\Str::random(3)) . '-' . rand(1000, 9999);
+        }
+
+        $guru->update([
+            'registration_code'            => $code,
+            'registration_code_expires_at' => now()->addDays(30),
+        ]);
+
+        return back()->with('success', "Kode Pendaftaran untuk '{$guru->name}' berhasil dibuat: [{$code}]. Minta guru menggunakan kode ini saat registrasi.");
+    }
+
+    /**
+     * Preview & Deteksi Duplikat Nama dari File PDF yang diupload
+     */
+    public function previewPdf(Request $request)
+    {
+        $request->validate([
+            'pdf_file' => ['required', 'file', 'mimes:pdf', 'max:10240'],
+        ], [
+            'pdf_file.required' => 'File PDF wajib dipilih.',
+            'pdf_file.mimes'    => 'File harus berformat PDF (.pdf).',
+            'pdf_file.max'      => 'Ukuran file PDF maksimal 10MB.',
+        ]);
+
+        $file = $request->file('pdf_file');
+        $fileName = $file->getClientOriginalName();
+        $extractedText = $this->extractTextFromPdfFile($file->getPathname());
+
+        $teacherNames = $this->parseTeacherNamesFromText($extractedText);
+
+        if (empty($teacherNames)) {
+            return back()->with('error', "Gagal membaca daftar nama pengajar dari file '{$fileName}'. Pastikan file PDF berisi teks pengajar yang valid.");
+        }
+
+        $existingGurus = Guru::all();
+        $previewData = [];
+
+        foreach ($teacherNames as $name) {
+            $norm = $this->normalizeName($name);
+
+            $exactMatch = $existingGurus->first(function ($g) use ($name, $norm) {
+                return strtolower(trim($g->name)) === strtolower(trim($name)) || $this->normalizeName($g->name) === $norm;
+            });
+
+            if ($exactMatch) {
+                $previewData[] = [
+                    'original'  => $name,
+                    'status'    => 'duplikat',
+                    'note'      => 'Potensi Data Duplikat dengan Guru ID ' . $exactMatch->id . ' (' . $exactMatch->name . ')',
+                    'guru_id'   => $exactMatch->id,
+                ];
+            } else {
+                $partialMatch = $existingGurus->first(function ($g) use ($norm) {
+                    return str_contains($norm, $this->normalizeName($g->name)) || str_contains($this->normalizeName($g->name), $norm);
+                });
+
+                if ($partialMatch) {
+                    $previewData[] = [
+                        'original' => $name,
+                        'status'   => 'verifikasi',
+                        'note'     => 'Perlu Verifikasi Admin (Kemungkinan mirip dengan Guru: ' . $partialMatch->name . ')',
+                        'guru_id'  => null,
+                    ];
+                } else {
+                    $previewData[] = [
+                        'original' => $name,
+                        'status'   => 'aman',
+                        'note'     => 'Siap Ditambahkan',
+                        'guru_id'  => null,
+                    ];
+                }
+            }
+        }
+
+        return view('admin.guru.preview-pdf', compact('previewData', 'fileName'));
+    }
+
+    /**
+     * Helper Ekstraksi Teks dari File PDF
+     */
+    protected function extractTextFromPdfFile(string $filePath): string
+    {
+        if (class_exists(\Smalot\PdfParser\Parser::class)) {
+            try {
+                $parser = new \Smalot\PdfParser\Parser();
+                $pdf = $parser->parseFile($filePath);
+                $text = $pdf->getText();
+                if (trim($text) !== '') {
+                    return $text;
+                }
+            } catch (\Throwable $e) {
+                // Fallback to native stream parsing
+            }
+        }
+
+        $content = file_get_contents($filePath);
+        if (!$content) return '';
+
+        preg_match_all('/BT[\s\S]*?ET/s', $content, $matches);
+        $text = '';
+        if (!empty($matches[0])) {
+            foreach ($matches[0] as $block) {
+                preg_match_all('/\((.*?)\)\s*T[jJ]/s', $block, $strMatches);
+                if (!empty($strMatches[1])) {
+                    $text .= implode(" ", $strMatches[1]) . "\n";
+                } else {
+                    preg_match_all('/\((.*?)\)/s', $block, $rawStrs);
+                    if (!empty($rawStrs[1])) {
+                        $text .= implode(" ", $rawStrs[1]) . "\n";
+                    }
+                }
+            }
+        }
+
+        if (trim($text) === '') {
+            $text = preg_replace('/[^\x20-\x7E\x0A\x0D]/', ' ', $content);
+        }
+
+        return $text;
+    }
+
+    /**
+     * Extract unique teacher names from PDF extracted text
+     */
+    protected function parseTeacherNamesFromText(string $rawText): array
+    {
+        $names = [];
+
+        $pattern = '/\b(?:Ust\.|Ustdz\.|Ust|Ustdz|Syaikhuna)\s+[A-Za-z0-9\.\,\'\s\\\]+/i';
+        preg_match_all($pattern, $rawText, $matches);
+
+        if (!empty($matches[0])) {
+            foreach ($matches[0] as $match) {
+                $clean = trim($match);
+                // Filter out non-teacher text words if any
+                $clean = preg_replace('/\s+(KHULASOH|JURUMIYAH|TASRIFAN|SAFINAH|NADZOMAN|HISNUL|ALFIYYAH|DUHUR|SUBUH|ASAR|MALAM|WAKTU|MATA|PELAJARAN|PENGAJAR|KELAS|IBTIDA|TSANAWI).*$/i', '', $clean);
+                $clean = trim($clean);
+
+                if (strlen($clean) >= 4 && strlen($clean) <= 60) {
+                    $names[] = $clean;
+                }
+            }
+        }
+
+        $lines = explode("\n", $rawText);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line !== '' && (preg_match('/^(Ust\.|Ustdz\.|Ust|Syaikhuna)/i', $line))) {
+                $clean = preg_replace('/\s+(KHULASOH|JURUMIYAH|TASRIFAN|SAFINAH|NADZOMAN|HISNUL|ALFIYYAH).*$/i', '', $line);
+                $names[] = trim($clean);
+            }
+        }
+
+        return array_values(array_unique(array_filter($names)));
+    }
+
+    /**
+     * Simpan Data Guru dari Verifikasi Admin PDF
+     */
+    public function importPdf(Request $request)
+    {
+        $selectedNames = (array) $request->input('names', []);
+
+        if (empty($selectedNames)) {
+            return redirect()->route('admin.guru.index')->with('error', 'Tidak ada nama yang dipilih untuk dimasukkan.');
+        }
+
+        $count = 0;
+        foreach ($selectedNames as $name) {
+            $cleanName = trim($name);
+            if ($cleanName === '') continue;
+
+            $exists = Guru::whereRaw('LOWER(TRIM(name)) = ?', [strtolower($cleanName)])->exists();
+            if (!$exists) {
+                Guru::create([
+                    'name'         => $cleanName,
+                    'status'       => 'aktif',
+                    'bergabung_at' => now()->toDateString(),
+                ]);
+                $count++;
+            }
+        }
+
+        return redirect()->route('admin.guru.index')
+            ->with('success', "Berhasil menambahkan {$count} data Guru baru ke Master Data Guru setelah verifikasi Admin.");
+    }
+
+    protected function normalizeName(string $name): string
+    {
+        $name = preg_replace('/^(ust\.|ustdz\.|ustadz|ustadzah|syaikhuna)\s+/i', '', trim($name));
+        $name = preg_replace('/[^a-zA-Z0-9\s]/', '', $name);
+        return strtolower(trim(preg_replace('/\s+/', ' ', $name)));
     }
 
     public function destroy(Request $request, $id)

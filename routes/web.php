@@ -23,8 +23,9 @@ Route::get('/guru', function () {
 });
 
 // ─── PENDAFTARAN AKUN GURU MANDIRI (dari halaman Login) ─────────────────────
-Route::get('/guru/daftar',  [AdminAuthController::class, 'showRegisterForm'])->name('guru.register');
-Route::post('/guru/daftar', [AdminAuthController::class, 'register'])->name('guru.register.post');
+Route::get('/guru/daftar',      [AdminAuthController::class, 'showRegisterForm'])->name('guru.register');
+Route::post('/guru/check-nama', [AdminAuthController::class, 'checkTeacherName'])->name('guru.check-nama');
+Route::post('/guru/daftar',     [AdminAuthController::class, 'register'])->name('guru.register.post');
 
 // ─── AUTH ─────────────────────────────────────────────────────────────────────
 Route::get('/admin/login',        [AdminAuthController::class, 'showLoginForm'])->name('admin.login');
@@ -57,6 +58,9 @@ Route::middleware(['auth.admin'])->prefix('admin')->name('admin.')->group(functi
     Route::post('/guru',                       [GuruController::class, 'store'])->name('guru.store');
     Route::put('/guru/{id}',                   [GuruController::class, 'update'])->name('guru.update');
     Route::delete('/guru/{id}',                [GuruController::class, 'destroy'])->name('guru.destroy');
+    Route::post('/guru/{id}/generate-code',    [GuruController::class, 'generateRegistrationCode'])->name('guru.generate-code');
+    Route::post('/guru/preview-pdf',           [GuruController::class, 'previewPdf'])->name('guru.preview-pdf');
+    Route::post('/guru/import-pdf',            [GuruController::class, 'importPdf'])->name('guru.import-pdf');
     Route::post('/guru/invitation',            [GuruController::class, 'storeInvitation'])->name('guru.invitation.store');
     Route::delete('/guru/invitation/{id}',     [GuruController::class, 'destroyInvitation'])->name('guru.invitation.destroy');
 

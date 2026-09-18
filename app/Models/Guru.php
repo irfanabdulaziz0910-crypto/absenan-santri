@@ -14,6 +14,8 @@ class Guru extends Model
     protected $fillable = [
         'name',
         'nip',
+        'registration_code',
+        'registration_code_expires_at',
         'nomor_hp',
         'classroom_id',
         'user_id',
@@ -28,7 +30,30 @@ class Guru extends Model
 
     protected $casts = [
         'bergabung_at' => 'date',
+        'registration_code_expires_at' => 'datetime',
     ];
+
+    public function hasAccount(): bool
+    {
+        if ($this->user_id && User::where('id', $this->user_id)->exists()) {
+            return true;
+        }
+        return User::where('guru_id', $this->id)->exists();
+    }
+
+    public function isRegistrationCodeValid(?string $code): bool
+    {
+        if (!$code || !$this->registration_code) {
+            return false;
+        }
+        if (strtoupper(trim($code)) !== strtoupper(trim($this->registration_code))) {
+            return false;
+        }
+        if ($this->registration_code_expires_at && $this->registration_code_expires_at->isPast()) {
+            return false;
+        }
+        return !$this->hasAccount();
+    }
 
     public function classroom()
     {
